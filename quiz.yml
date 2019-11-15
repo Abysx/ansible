@@ -1,0 +1,129 @@
+---
+- name: install web server
+  hosts: all
+  remote_user: root
+  vars:
+    mysql_root_password: abc
+  tasks:
+
+    - name: ensure a list of packages installed
+      yum:
+        name: "{{ packages }}"
+      vars:
+        packages:
+        - httpd
+        - mariadb
+        - mariadb-server
+        - php
+        - php-common
+        - php-mysql
+        - php-gd
+        - php-xml
+        - php-mbstring
+        - php-mcrypt
+        - php-xmlrpc
+        - unzip
+        - wget
+        - MySQL-python
+
+    - name: Start service httpd, if not started
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: firewall enable httpd
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+        immediate: yes
+
+    - name: Start service mariadb, if not started
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: update mysql root password
+      mysql_user:
+        name: root
+        host: "{{ item }}"
+        password: abc
+        login_user: root
+        login_password: abc
+        priv: "*.*:ALL,GRANT"
+      with_items:
+        - localhost
+        - 127.0.0.1
+        - ::1
+
+    - name: Removes anonymous user account for localhost
+      mysql_user:
+        login_user: root
+        login_password: abc
+        name: ''
+        host: ''
+        state: absent
+
+    - name: Drop database test
+      mysql_db:
+        login_user: root
+        login_password: abc
+        name: test
+        state: absent
+
+    - name: Create a new database called wordpress
+      mysql_db:
+        login_user: root
+        login_password: abc
+        name: wordpress
+        state: present
+
+    - name: update mysql root password on wordpree table
+      mysql_user:
+        name: ansible
+        host: "{{ item }}"
+        password: mypassword
+        login_user: root
+        login_password: abc
+        priv: "wordpress.*:ALL,GRANT"
+      with_items:
+        - localhost
+        - 127.0.0.1
+        - ::1
+
+    - name: Unarchive a file that needs to be downloaded (added in 2.0)
+      unarchive:
+        src: https://wordpress.org/wordpress-5.0.tar.gz
+        dest: /var/www/html/
+        remote_src: yes
+
+    - name: Recursively change ownership of a directory
+      file:
+        path: /var/www/html/wordpress
+        state: directory
+        recurse: yes
+        owner: apache
+        group: apache
+        mode: 0755
+
+    - name: Create a directory if it does not exist
+      file:
+        path: /var/www/html/wordpress/wp-content/uploads
+        state: directory
+        mode: '0755'
+        group: apache
+
+    - name: mv file
+      command: mv /var/www/html/wordpress/wp-config-sample.php /var/www/html/wordpress/wp-config.php
+
+    - name: edit file
+      lineinfile:
+        path: /var/www/html/wordpress/wp-config.php
+        line: "define({{ item.var }}),{{ item.name }});"
+        regexp: ^define\({{ item.key }}
+      loop:
+        - { var: "\'DB_NAME\'", name: "\'wordpress\'" }
+        - { var: "\'DB_USER\'", name: "\'ansible\'" }
+        - { var: "\'DB_PASSWORD\'", name: "\'wordpress\'" }
